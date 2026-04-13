@@ -83,7 +83,8 @@ button:hover {
 
 <div class="status" id="status">Scan a student's QR code...</div>
 
-<button onclick="clearData()">Clear Attendance</button>
+<button onclick="switchCamera()">🔄 Switch Camera</button>
+<button onclick="clearData()">🗑️ Clear Attendance</button>
 
 <table>
     <thead>
@@ -99,7 +100,12 @@ button:hover {
 <script>
 let attendance = JSON.parse(localStorage.getItem("attendance")) || {};
 
-// Extract ID from QR (supports URL or plain text)
+let html5QrCode = new Html5Qrcode("reader");
+
+let cameras = [];
+let currentCameraIndex = 0;
+
+// Extract ID from QR
 function extractStudentId(decodedText) {
     try {
         const url = new URL(decodedText);
@@ -115,23 +121,22 @@ function updateTable() {
     table.innerHTML = "";
 
     for (let id in attendance) {
-        let row = `
+        table.innerHTML += `
             <tr>
                 <td>${id}</td>
                 <td class="present">Present</td>
                 <td>${attendance[id]}</td>
             </tr>
         `;
-        table.innerHTML += row;
     }
 }
 
-// Save data
+// Save
 function saveData() {
     localStorage.setItem("attendance", JSON.stringify(attendance));
 }
 
-// Clear attendance
+// Clear
 function clearData() {
     attendance = {};
     saveData();
@@ -139,7 +144,7 @@ function clearData() {
     document.getElementById("status").innerText = "🗑️ Attendance cleared";
 }
 
-// When QR is scanned
+// QR success
 function onScanSuccess(decodedText) {
     const studentId = extractStudentId(decodedText);
 
@@ -159,30 +164,61 @@ function onScanSuccess(decodedText) {
     }
 }
 
+// QR error
 function onScanError(errorMessage) {
     // ignore
 }
 
 // Start camera
-const html5QrCode = new Html5Qrcode("reader");
+function startCamera(cameraId) {
+    html5QrCode.start(
+        cameraId,
+        {
+            fps: 10,
+            qrbox: 250
+        },
+        onScanSuccess,
+        onScanError
+    );
+}
 
+// Switch camera
+function switchCamera() {
+    if (cameras.length < 2) {
+        document.getElementById("status").innerText =
+            "⚠️ Only one camera found";
+        return;
+    }
+
+    html5QrCode.stop().then(() => {
+        currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
+        startCamera(cameras[currentCameraIndex].id);
+
+        document.getElementById("status").innerText =
+            "🔄 Camera switched";
+    }).catch(err => console.error(err));
+}
+
+// Load cameras + start
 Html5Qrcode.getCameras().then(devices => {
     if (devices && devices.length) {
-        html5QrCode.start(
-            devices[0].id,
-            {
-                fps: 10,
-                qrbox: 250
-            },
-            onScanSuccess,
-            onScanError
-        );
-    }
-}).catch(err => {
-    console.error(err);
-});
 
-// Load previous data
+        cameras = devices;
+
+        // try front camera first
+        let front = devices.find(d =>
+            d.label.toLowerCase().includes("front")
+        );
+
+        if (front) {
+            currentCameraIndex = devices.indexOf(front);
+        }
+
+        startCamera(cameras[currentCameraIndex].id);
+    }
+}).catch(err => console.error(err));
+
+// Load saved data
 updateTable();
 </script>
 
